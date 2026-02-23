@@ -1,0 +1,19 @@
+[project]
+name = "campscan-codex"
+version = "0.1.0"
+description = "Ontario Parks campground availability scanner"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "streamlit>=1.41.0",
+  "playwright>=1.49.0",
+  "pandas>=2.2.3"
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3.4"
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
