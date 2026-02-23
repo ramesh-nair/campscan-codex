@@ -1,7 +1,6 @@
 from datetime import date
 
-import campscan.scanner as scanner
-from campscan.scanner import SearchSettings, _extract_from_json_blob, build_search_url
+from campscan.scanner import SearchSettings, build_search_url, _extract_from_json_blob
 
 
 def test_build_search_url_overrides_query_values():
@@ -39,33 +38,3 @@ def test_extract_from_json_blob_detects_availability_shapes():
     assert records[0].campground == "Algonquin"
     assert records[0].unit_name == "Site 101"
     assert records[1].status == "Sold Out"
-
-
-def test_configure_windows_event_loop_policy_updates_policy(monkeypatch):
-    class FakePolicy:
-        pass
-
-    class FakeProactorPolicy(FakePolicy):
-        pass
-
-    tracker = {"value": FakePolicy()}
-
-    monkeypatch.setattr(scanner.sys, "platform", "win32")
-    monkeypatch.setattr(scanner.asyncio, "WindowsProactorEventLoopPolicy", FakeProactorPolicy, raising=False)
-    monkeypatch.setattr(scanner.asyncio, "get_event_loop_policy", lambda: tracker["value"])
-    monkeypatch.setattr(scanner.asyncio, "set_event_loop_policy", lambda value: tracker.update(value=value))
-
-    scanner._configure_windows_event_loop_policy()
-
-    assert isinstance(tracker["value"], FakeProactorPolicy)
-
-
-def test_scan_availability_uses_windows_subprocess(monkeypatch):
-    sentinel = [scanner.AvailabilityRecord("A", "B", "C", "D", "E")]
-
-    monkeypatch.setattr(scanner.sys, "platform", "win32")
-    monkeypatch.setattr(scanner, "_scan_availability_windows_subprocess", lambda requests, settings, timeout_ms: sentinel)
-
-    result = scanner.scan_availability([], SearchSettings(date(2026, 1, 1), date(2026, 1, 2), 2, "1", "2"))
-
-    assert result == sentinel

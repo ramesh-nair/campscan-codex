@@ -1,13 +1,10 @@
 from __future__ import annotations
 
-import asyncio
 import json
 import re
-import sys
 from collections.abc import Iterable
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from datetime import date
-from multiprocessing import get_context
 from typing import Any
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
@@ -38,20 +35,6 @@ class AvailabilityRecord:
     unit_name: str
     status: str
     details: str
-
-
-def _configure_windows_event_loop_policy() -> None:
-    """Ensure Playwright can spawn subprocesses when running on Windows."""
-    if sys.platform != "win32":
-        return
-
-    policy_cls = getattr(asyncio, "WindowsProactorEventLoopPolicy", None)
-    if policy_cls is None:
-        return
-
-    current_policy = asyncio.get_event_loop_policy()
-    if not isinstance(current_policy, policy_cls):
-        asyncio.set_event_loop_policy(policy_cls())
 
 
 def _deep_iter(data: Any) -> Iterable[Any]:
@@ -142,7 +125,7 @@ def _extract_from_page_text(page_text: str, campground: str) -> list[Availabilit
     return records
 
 
-def _scan_availability_impl(requests: list[ScanRequest], settings: SearchSettings, timeout_ms: int) -> list[AvailabilityRecord]:
+def scan_availability(requests: list[ScanRequest], settings: SearchSettings, timeout_ms: int = 45_000) -> list[AvailabilityRecord]:
     all_records: list[AvailabilityRecord] = []
 
     with sync_playwright() as pw:
@@ -196,61 +179,3 @@ def _scan_availability_impl(requests: list[ScanRequest], settings: SearchSetting
         browser.close()
 
     return all_records
-
-
-def _scan_worker(payload: dict[str, Any], queue) -> None:
-    try:
-        _configure_windows_event_loop_policy()
-        requests = [ScanRequest(**item) for item in payload["requests"]]
-        settings_data = payload["settings"]
-        settings_data["start_date"] = date.fromisoformat(settings_data["start_date"])
-        settings_data["end_date"] = date.fromisoformat(settings_data["end_date"])
-        settings = SearchSettings(**settings_data)
-        records = _scan_availability_impl(requests, settings, payload["timeout_ms"])
-        queue.put({"records": [asdict(record) for record in records]})
-    except Exception as exc:  # noqa: BLE001
-        queue.put({"error": f"{type(exc).__name__}: {exc}"})
-
-
-def _scan_availability_windows_subprocess(
-    requests: list[ScanRequest], settings: SearchSettings, timeout_ms: int = 45_000
-) -> list[AvailabilityRecord]:
-    ctx = get_context("spawn")
-    queue = ctx.Queue()
-
-    payload = {
-        "requests": [asdict(request) for request in requests],
-        "settings": {
-            **asdict(settings),
-            "start_date": settings.start_date.isoformat(),
-            "end_date": settings.end_date.isoformat(),
-        },
-        "timeout_ms": timeout_ms,
-    }
-
-    process = ctx.Process(target=_scan_worker, args=(payload, queue))
-    process.start()
-    process.join(120)
-
-    if process.is_alive():
-        process.terminate()
-        process.join()
-        raise RuntimeError("Playwright scan timed out in Windows worker process.")
-
-    result = queue.get() if not queue.empty() else {"error": "No scanner result returned."}
-    if "error" in result:
-        raise RuntimeError(
-            "Playwright failed on Windows. "
-            "Confirm browser binaries are installed with `python -m playwright install chromium`. "
-            f"Details: {result['error']}"
-        )
-
-    return [AvailabilityRecord(**item) for item in result["records"]]
-
-
-def scan_availability(requests: list[ScanRequest], settings: SearchSettings, timeout_ms: int = 45_000) -> list[AvailabilityRecord]:
-    if sys.platform == "win32":
-        return _scan_availability_windows_subprocess(requests, settings, timeout_ms)
-
-    _configure_windows_event_loop_policy()
-    return _scan_availability_impl(requests, settings, timeout_ms)
