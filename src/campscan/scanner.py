@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-import asyncio
 import json
 import re
-import sys
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date
@@ -12,26 +10,6 @@ from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import sync_playwright
-
-
-def _configure_windows_event_loop_policy() -> None:
-    """Ensure Playwright can spawn subprocesses when running on Windows.
-
-    Some environments set a selector-based event loop policy that does not
-    implement subprocess transport on Windows, causing NotImplementedError
-    when Playwright boots its driver.
-    """
-
-    if sys.platform != "win32":
-        return
-
-    policy_cls = getattr(asyncio, "WindowsProactorEventLoopPolicy", None)
-    if policy_cls is None:
-        return
-
-    current_policy = asyncio.get_event_loop_policy()
-    if not isinstance(current_policy, policy_cls):
-        asyncio.set_event_loop_policy(policy_cls())
 
 
 @dataclass
@@ -149,7 +127,6 @@ def _extract_from_page_text(page_text: str, campground: str) -> list[Availabilit
 
 def scan_availability(requests: list[ScanRequest], settings: SearchSettings, timeout_ms: int = 45_000) -> list[AvailabilityRecord]:
     all_records: list[AvailabilityRecord] = []
-    _configure_windows_event_loop_policy()
 
     with sync_playwright() as pw:
         browser = pw.chromium.launch(headless=True)
