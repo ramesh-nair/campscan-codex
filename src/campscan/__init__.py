@@ -1,0 +1,1 @@
+"""CampScan package."""
